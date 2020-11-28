@@ -29,10 +29,27 @@ class Game(object):
     def __init__(self, k):
         self.k = k
         self.arm_means: list = self.init_arm_means(k)
+        self.best_arm = np.argmax(self.arm_means)
+        self.delta_a: list = self.calc_delta_a()
 
     def init_arm_means(self, k):
+        """
+        Chooses random values (0, 1) for the k number arms
+        """
         means = np.array([random.random() for i in range(k)])
         return means
+
+    def calc_delta_a(self):
+        """
+        Calculate difference between the mean of the best arm and
+        mean of the others.
+        :return: list with differences
+        """
+        differences = []
+        for other_arm_mean in self.arm_means:
+            diff = self.arm_means[self.best_arm] - other_arm_mean
+            differences.append(diff)
+        return np.array(differences)
 
     def draw_reward(self, arm):
         """
@@ -47,10 +64,10 @@ class Game(object):
     def play(self, strategies: list, T: int):
         """
         play games for every strategy
-        :return: the strategy dicts
+        :return: the strategy objects
         """
         for strategy in strategies:
-            for pull in range(T):
+            for timepoint in range(T):
                 # choose arm based on (highest q(a) / uncertainty with highest upper bound)
                 arm = strategy.choose_arm()
 
@@ -58,8 +75,28 @@ class Game(object):
                 reward = self.draw_reward(arm)
                 strategy.update_rewards(arm, reward)
 
-                # todo calculate total regret
-                # store total regret in strategy
+                # calculate total regret & store it
+                regret = self.calc_regret(strategy)
+                strategy.update_regrets(timepoint, regret)
+        return strategies
+
+    def calc_regret(self, strategy) -> float:
+        """
+        Computes expected total regret: the sum of all difference between
+        optimal arm mean and chosen arm means.
+        :returns: the sum of the differences.
+        """
+        regret = 0
+
+        # get the times every arm has been chosen
+        times_chosen = strategy.count_choices()
+
+        # sum the regret for every a
+        for arm in times_chosen:
+            # multiply (best_a - other_a) with the times other_a is chosen
+            regret += self.delta_a[arm] * times_chosen[arm]
+
+        return regret
 
     def calc_lai_robbins(self):
         pass
@@ -74,9 +111,9 @@ class Game(object):
         :return:
         """
         # initialize class instances for the strategies
-        e1_greedy = E_Greedy(epsilon=0.1, k=self.k)
-        e3_greedy = E_Greedy(epsilon=0.3, k=self.k)
-        e8_greedy = E_Greedy(epsilon=0.8, k=self.k)
+        e1_greedy = E_Greedy(timesteps=T, epsilon=0.1, k=self.k)
+        e3_greedy = E_Greedy(timesteps=T, epsilon=0.3, k=self.k)
+        e8_greedy = E_Greedy(timesteps=T, epsilon=0.8, k=self.k)
         #todo UCD
 
         # init storage dict for every strategy(put optimistic q in it) --> can also be strategy class
@@ -95,15 +132,22 @@ class Game(object):
         # show table
 
 class Strategy(object):
-    def __init__(self, k):
+    """
+    Strategy superclass
+    - knows the received rewards of every arm
+    - tracks total regret for every timestep
+    """
+    def __init__(self, timesteps:int, k: int):
+        self.optim_c = 2000
         self.rewards: dict = self.init_rewards(k)
+        self.regrets: list = np.zeros(timesteps)
 
     def init_rewards(self, k):
         """
         Optimistic initialization
-        :return: dict with key arms and high value
+        :return: dict with key arms and high values
         """
-        optimistic_values = {arm: np.array([2000]) for arm in range(k)}
+        optimistic_values = {arm: np.array([self.optim_c]) for arm in range(k)}
         return optimistic_values
 
     def update_rewards(self, arm: int, reward: float):
@@ -111,36 +155,40 @@ class Strategy(object):
         add another value to the self.rewards.
         if the existing value is Optimistic Init, replace; otherwise, append
         """
-        if self.rewards[arm][0] > 1000:
+        if self.rewards[arm][0] == self.optim_c:
             self.rewards[arm] = np.array(reward)
         else:
             self.rewards[arm] = np.append(self.rewards[arm], reward)
 
+    def count_choices(self) -> dict:
+        """
+        Returns the number of times ever arm has been pulled
+        :return:
+        """
+        times_chosen = dict()
+
+        # exclude the optimistic value when counting choices
+        for arm, values in self.rewards.items():
+            if self.optim_c not in values:
+                times_chosen[arm] = len(values)
+            else:
+                times_chosen[arm] = 0
+
+        # times_chosen = {key: len(values) for key, values in self.rewards.items()}
+        return times_chosen
+
+    def update_regrets(self, timepoint, regret):
+        """
+        Adds new timepoint's expected total regret
+        """
+        self.regrets[timepoint] = regret
+
+
 
 class E_Greedy(Strategy):
-    def __init__(self, epsilon, k):
-        Strategy.__init__(self, k)
-        # self.rewards: dict = self.init_rewards(k)
+    def __init__(self, timesteps, epsilon, k):
+        Strategy.__init__(self, timesteps, k)
         self.epsilon: float = epsilon
-
-    # def init_rewards(self, k):
-    #     """
-    #     Optimistic initialization
-    #
-    #     :return: dict with key arms and high value
-    #     """
-    #     optimistic_values = {arm: np.array([2000]) for arm in range(k)}
-    #     return optimistic_values
-    #
-    # def update_rewards(self, arm: int, reward: float):
-    #     """
-    #     add another value to the self.rewards.
-    #     if the existing value is Optimistic Init, replace; otherwise, append
-    #     """
-    #     if self.rewards[arm][0] > 1000:
-    #         self.rewards[arm] = np.array([reward])
-    #     else:
-    #         self.rewards[arm] = np.append(self.rewards[arm], reward)
 
     def calc_best_arm(self):
         """
