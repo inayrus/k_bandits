@@ -33,7 +33,7 @@ class E_Greedy(Strategy):
 
         return best_arm
 
-    def choose_arm(self) -> int:
+    def choose_arm(self, timepoint=None) -> int:
         """
         Chooses arm with a*=1-epsilon and other_a=epsilon
         :return: index of chosen arm

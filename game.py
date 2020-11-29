@@ -22,8 +22,9 @@ play loop:
 
 Author: Valerie Sawirja
 """
-from e_greedy import E_Greedy
 import matplotlib.pyplot as plt
+from e_greedy import E_Greedy
+from ucb import UCB
 import numpy as np
 import random
 
@@ -138,24 +139,49 @@ class Game(object):
             KL[i] = np.sum(np.log(div)) / N
         return KL
 
+    def strats_as_dict(self, strategies: list) -> dict:
+        """
+        Sorts a list with different strategies to a strategy indexed dict
+        (could be improved by dynamically calling derived Strategy classes)
+        :return:
+        """
+        all_strats = {"UCB": UCB,
+                      "Epsilon Greedy": E_Greedy}
+        strat_dict = dict()
+
+        for name, strat in all_strats.items():
+            strat_dict[name] = list(filter(lambda x: isinstance(x, strat),
+                                                 strategies))
+
+        return strat_dict
 
     def plot_strats(self, strategies):
-        # plot
-        plt.figure(figsize=(10, 4))
+        """
+        Create seperate plots for the strategies, but include the Lai_Robbins.
+        :param strategies:
+        :return:
+        """
+        strat_dict = self.strats_as_dict(strategies)
 
-        for strategy in strategies:
-            curve = strategy.regrets
-            plt.plot(curve, alpha=0.1)
-            plt.plot(curve, label=f'{strategy.name}')
+        for strat_name, strats in strat_dict.items():
+            # plot
+            plt.figure(figsize=(10, 4))
 
-        # lai robbins
-        plt.plot(self.lai_rob, label=f'Lai-Robbins')
+            for strategy in strats:
+                curve = strategy.regrets
+                plt.plot(curve, alpha=0.1)
+                plt.plot(curve, label=f'{strategy.name}')
 
-        plt.legend()
-        plt.xlabel('Time Points')
-        plt.ylabel('Expected Regret')
+            # lai robbins
+            plt.plot(self.lai_rob, label=f'Lai-Robbins')
 
-        plt.savefig('strategy_regret.pdf', bbox_inches="tight")
+            plt.legend()
+            plt.title(f"Total expected regret for the {strat_name} strategy")
+            plt.xlabel('Time Points')
+            plt.ylabel('Expected Regret')
+            plt.yticks(np.arange(0, 350, 50))
+
+            plt.savefig(f'results/strategy_regret_{strat_name}.pdf', bbox_inches="tight")
 
     def calc_accuracy(self, strategies):
         """
@@ -178,7 +204,7 @@ class Game(object):
         for strategy in strategies:
             for timepoint in range(self.T):
                 # choose arm based on (highest q(a) / uncertainty with highest upper bound)
-                arm = strategy.choose_arm()
+                arm = strategy.choose_arm(timepoint)
 
                 # draw reward & store reward in strategy class
                 reward = self.draw_reward(arm)
@@ -215,13 +241,14 @@ if __name__ == "__main__":
     game = Game(k, timepoints)
 
     # initialize class instances for the strategies
-    e1_greedy = E_Greedy(timepoints, epsilon=0.1, k=k, name="e-greedy 0.1")
-    e3_greedy = E_Greedy(timepoints, epsilon=0.3, k=k, name="e-greedy 0.3")
-    e8_greedy = E_Greedy(timepoints, epsilon=0.8, k=k, name="e-greedy 0.8")
-    # todo UCD
+    ucb_05 = UCB(timepoints, 0.5, k, "c = 0.5")
+    ucb_1 = UCB(timepoints, 1.0, k, "c = 1.0")
+    ucb_3 = UCB(timepoints, 3.0, k, "c = 3.0")
 
-    # init storage dict for every strategy(put optimistic q in it) --> can also be strategy class
-    # strategies = [eVALUE_greedy, eVALUE2_greedy, eVALUE3_greedy, UCB, UCB_c, UCB_c2]
-    strategies = [e1_greedy, e3_greedy, e8_greedy]
+    e1_greedy = E_Greedy(timepoints, epsilon=0.1, k=k, name="epsilon: 0.1")
+    e3_greedy = E_Greedy(timepoints, epsilon=0.3, k=k, name="epsilon: 0.3")
+    e8_greedy = E_Greedy(timepoints, epsilon=0.8, k=k, name="epsilon: 0.8")
+
+    strategies = [ucb_05, ucb_1, ucb_3, e1_greedy, e3_greedy, e8_greedy]
 
     game.experiment(strategies)
